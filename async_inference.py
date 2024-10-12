@@ -10,16 +10,16 @@ import re
 import json
 import prompts
 
-MAX_CONCURRENT_CALLS = 30
+MAX_CONCURRENT_CALLS = 20
 
 load_dotenv()
 
 api_key = os.getenv("MISTRAL_API_KEY")  # your API key
-questions_file = "./data/dataset/questions.csv"  # path to the questions file
+questions_file = "./data/dataset/dataset_english_only_clean_final.csv"  # path to the questions file
 
 output_path = "./data/output/"  # path to the output file
 
-df = pd.read_csv(questions_file)
+df = pd.read_csv(questions_file, sep=",")
 
 question_prompt = lambda instructions, body, possible_answer_a, possible_answer_b, possible_answer_c, possible_answer_d, possible_answer_e: (
     f"{instructions}\n"
@@ -38,8 +38,9 @@ async def process_prompt(client, prompt, semaphore):
     async with semaphore:
         try:
             res = await client.chat.complete_async(
-                model="mistral-small-latest",
+                model="mistral-large-latest",
                 messages=[{"content": prompt, "role": "user"}],
+                temperature=0.0
             )
             if res is not None:
                 return prompt, res.choices[0].message.content
@@ -56,6 +57,7 @@ async def main(prompts=None):
     results = await asyncio.gather(*tasks)
 
     for prompt, result in zip(prompts, results):
+        print(result[1])
         json_string = re.findall(
             r"\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}", result[1]
         )[0]
@@ -66,7 +68,7 @@ async def main(prompts=None):
 if __name__ == "__main__":
     list_prompts = [
         question_prompt(
-            prompts.THINK_PROMPT,
+            prompts.PIZZA_MODIFIER + prompts.THINK_PROMPT,
             row["question"],
             row["answer_A"],
             row["answer_B"],
