@@ -5,14 +5,14 @@ def ask_perplexity(query, api_key):
     openai.api_base = "https://api.perplexity.ai"
 
     try:
-        response = openai.ChatCompletion.create(
+        response = openai.chat.completions.create(
             model="mixtral-8x7b-instruct",
             messages=[
                 {"role": "user", "content": query}
             ]
         )
         return response.choices[0].message.content
-    except openai.error.OpenAIError as e:
+    except Exception as e:
         return f"Error: {str(e)}"
 
 # Example usage
