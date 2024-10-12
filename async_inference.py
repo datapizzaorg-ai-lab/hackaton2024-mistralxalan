@@ -5,6 +5,10 @@ from asyncio import Semaphore
 import pandas as pd
 from dotenv import load_dotenv
 from mistralai import Mistral
+import datetime
+import re
+import json
+import prompts
 
 MAX_CONCURRENT_CALLS = 30
 
@@ -17,13 +21,8 @@ output_path = "./data/output/"  # path to the output file
 
 df = pd.read_csv(questions_file)
 
-question_prompt = lambda body, possible_answer_a, possible_answer_b, possible_answer_c, possible_answer_d, possible_answer_e: (
-    "Answer the following question with the letters of the correct answer. Each question can have multiple answers that are right. "
-    "For each answwer think this way: 'is it true compared to the question provided?'"
-    "For each question first explain the medical condition and what are the implication, give context, then print the corrects answers."
-    "Your answer must contain the letter of the answers, separated by commas and without any space. An ideal output is like: 'A,B', for instance."
-    "You output the letters that you are asked to provide, e.g. 'A,B,C' or 'C'. Your answer is always sorted alphabetically. You must not put letters"
-    "in a different order"
+question_prompt = lambda instructions, body, possible_answer_a, possible_answer_b, possible_answer_c, possible_answer_d, possible_answer_e: (
+    f"{instructions}\n"
     f"{body}\n"
     f"A: {possible_answer_a}\n"
     f"B: {possible_answer_b}\n"
@@ -57,15 +56,17 @@ async def main(prompts=None):
     results = await asyncio.gather(*tasks)
 
     for prompt, result in zip(prompts, results):
-        print(f"Prompt: {prompt}")
-        print(f"Response: {result}")
-        print()
-        answers.append(result[1])
+        json_string = re.findall(
+            r"\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}", result[1]
+        )[0]
+        # print(",".join(json.loads(json_string)["answer"]))
+        answers.append(",".join(json.loads(json_string)["answer"]))
 
 
 if __name__ == "__main__":
-    prompts = [
+    list_prompts = [
         question_prompt(
+            prompts.THINK_PROMPT,
             row["question"],
             row["answer_A"],
             row["answer_B"],
@@ -75,11 +76,13 @@ if __name__ == "__main__":
         )
         for row_idx, row in df.iterrows()
     ]
-    asyncio.run(main(prompts=prompts))
+    asyncio.run(main(prompts=list_prompts))
 
     output_df = pd.DataFrame(answers, columns=["Answer"])
     output_df.index.name = "id"
 
     os.makedirs(output_path, exist_ok=True)
 
-    output_df.to_csv(f"{output_path}output_verbose.csv")
+    output_df.to_csv(
+        f"{output_path}output_verbose_{datetime.datetime.now().strftime('%H:%M:%S')}.csv"
+    )
