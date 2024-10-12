@@ -1,4 +1,8 @@
 .env
+/venv/
 .venv/
-
+venv
 /data/output
+env/
+virtualenv/
+ENV/
