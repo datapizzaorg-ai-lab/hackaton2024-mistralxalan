@@ -37,25 +37,52 @@ question_prompt = lambda body, possible_answer_a, possible_answer_b, possible_an
 
 answers = []
 
+check_prompts = [
+    "There are lives that depend on your answer; Think carefully, you may as well have given the right answer as you may have been wrong; Write your final answer always following the same format",
+    "Okay now double-check that the format is right, which is like this: {“answer”: “A,B,D”}",
+    "You are almost there, just one more step, remember the format! And try to be as accurate as possible with you answers, you can do it!",
+]
+
 
 async def process_prompt(client, prompt, semaphore):
     async with semaphore:
+        history = []
         try:
+            history.append(
+                {
+                    "content": prompts.PIZZA_MODIFIER
+                    + prompts.THINK_PROMPT_CONTEXT.format(context=df_context["tag"])
+                    + prompts.THINK_PROMPT_CONTEXT_FEW_SHOTS,
+                    "role": "system",
+                }
+            )
+            history.append({"content": prompt, "role": "user"})
             res = await client.chat.complete_async(
                 model=MODEL_NAME,
-                messages=[
-                    {
-                        "content": prompts.PIZZA_MODIFIER
-                        + prompts.THINK_PROMPT_CONTEXT.format(context=df_context["tag"])
-                        + prompts.THINK_PROMPT_CONTEXT_FEW_SHOTS,
-                        "role": "system",
-                    },
-                    {"content": prompt, "role": "user"},
-                ],
+                messages=history,
                 temperature=0.0,
             )
             if res is not None:
-                return prompt, res.choices[0].message.content
+                response = res.choices[0].message.content
+                history.append({"content": response, "role": "assistant"})
+
+                for index in range(MAX_TRY_NUMBER):
+                    print(f"Try number: {index}")
+                    history.append({"content": check_prompts[index], "role": "user"})
+
+                    res = await client.chat.complete_async(
+                        model=MODEL_NAME,
+                        messages=history,
+                        temperature=0.0,
+                    )
+
+                    response = res.choices[0].message.content
+                    history.append({"content": response, "role": "assistant"})
+
+                return (
+                    prompt,
+                    response,
+                )
         except Exception as e:
             return prompt, f"Error: {str(e)}"
     return prompt, None
