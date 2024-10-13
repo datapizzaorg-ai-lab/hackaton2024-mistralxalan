@@ -64,7 +64,9 @@ async def process_prompt(client, prompt, semaphore):
                 history.append({"content": response, "role": "assistant"})
 
                 for index in range(MAX_TRY_NUMBER):
-                    print(f"Try number: {index}")
+                    print(
+                        f"Reasoning turn: {index}, {datetime.datetime.now().strftime('%H:%M:%S')}"
+                    )
                     history.append({"content": check_prompts[index], "role": "user"})
 
                     res = await client.chat.complete_async(
