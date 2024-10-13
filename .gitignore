@@ -6,3 +6,6 @@ venv
 env/
 virtualenv/
 ENV/
+
+.DS_Store
+__pycache__
