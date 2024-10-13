@@ -1,28 +1,30 @@
 import asyncio
+import datetime
+import json
 import os
+import re
 from asyncio import Semaphore
 
 import pandas as pd
 from dotenv import load_dotenv
 from mistralai import Mistral
-import datetime
-import re
-import json
-import prompts
+
+from utils.config import models
 
 MAX_CONCURRENT_CALLS = 20
+MAX_TRY_NUMBER = 2
+MODEL_ID = "mistral_large_first_ft"
+MODEL_NAME = models[MODEL_ID]
 
 load_dotenv()
 
-api_key = os.getenv("MISTRAL_API_KEY")  # your API key
-questions_file = "./data/dataset/dataset_english_only_clean_final.csv"  # path to the questions file
-
-output_path = "./data/output/"  # path to the output file
+api_key = os.getenv("MISTRAL_API_KEY")
+questions_file = "./data/dataset/dataset_english_only_clean_final.csv"
+output_path = "./data/output/"
 
 df = pd.read_csv(questions_file, sep=",")
 
-question_prompt = lambda instructions, body, possible_answer_a, possible_answer_b, possible_answer_c, possible_answer_d, possible_answer_e: (
-    f"{instructions}\n"
+question_prompt = lambda body, possible_answer_a, possible_answer_b, possible_answer_c, possible_answer_d, possible_answer_e: (
     f"{body}\n"
     f"A: {possible_answer_a}\n"
     f"B: {possible_answer_b}\n"
@@ -38,9 +40,9 @@ async def process_prompt(client, prompt, semaphore):
     async with semaphore:
         try:
             res = await client.chat.complete_async(
-                model="mistral-large-latest",
+                model=MODEL_NAME,
                 messages=[{"content": prompt, "role": "user"}],
-                temperature=0.0
+                temperature=0.0,
             )
             if res is not None:
                 return prompt, res.choices[0].message.content
@@ -51,24 +53,28 @@ async def process_prompt(client, prompt, semaphore):
 
 async def main(prompts=None):
     s = Mistral(api_key=os.getenv("MISTRAL_API_KEY", ""))
-
     semaphore = Semaphore(MAX_CONCURRENT_CALLS)
     tasks = [process_prompt(s, prompt, semaphore) for prompt in prompts]
     results = await asyncio.gather(*tasks)
 
-    for prompt, result in zip(prompts, results):
-        print(result[1])
-        json_string = re.findall(
-            r"\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}", result[1]
-        )[0]
-        # print(",".join(json.loads(json_string)["answer"]))
-        answers.append(",".join(json.loads(json_string)["answer"]))
+    for _, result in results:
+        print(result)
+        json_strings = re.findall(
+            r"\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}", result
+        )
+        if json_strings:
+            try:
+                answer_dict = json.loads(json_strings[0])
+                answers.append(",".join(answer_dict["answer"]))
+            except json.JSONDecodeError:
+                answers.append("Error: Invalid JSON")
+        else:
+            answers.append("Error: No valid JSON found")
 
 
 if __name__ == "__main__":
     list_prompts = [
         question_prompt(
-            prompts.PIZZA_MODIFIER + prompts.THINK_PROMPT,
             row["question"],
             row["answer_A"],
             row["answer_B"],
@@ -76,7 +82,7 @@ if __name__ == "__main__":
             row["answer_D"],
             row["answer_E"],
         )
-        for row_idx, row in df.iterrows()
+        for _, row in df.iterrows()
     ]
     asyncio.run(main(prompts=list_prompts))
 

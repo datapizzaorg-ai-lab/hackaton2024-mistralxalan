@@ -9,19 +9,21 @@ import pandas as pd
 from dotenv import load_dotenv
 from mistralai import Mistral
 
-import prompts
+import utils.prompts as prompts
+from utils.config import models
 
 MAX_CONCURRENT_CALLS = 20
-MAX_TRY_NUMBER = 2
+MAX_TRY_NUMBER = 3
+MODEL_ID = "mistral_large_first_ft"
+MODEL_NAME = models[MODEL_ID]
 
 load_dotenv()
 
 api_key = os.getenv("MISTRAL_API_KEY")
-questions_file = "./data/dataset/questions.csv"
+questions_file = "./data/dataset/dataset_english_only_clean_final.csv"
 output_path = "./data/output/"
 
 df = pd.read_csv(questions_file, sep=",")
-df_context = pd.read_csv("./data/dataset/context_21:33:00.csv", sep=",")
 
 question_prompt = lambda body, possible_answer_a, possible_answer_b, possible_answer_c, possible_answer_d, possible_answer_e: (
     f"{body}\n"
@@ -37,6 +39,7 @@ answers = []
 check_prompts = [
     "There are lives that depend on your answer; Think carefully, you may as well have given the right answer as you may have been wrong; Write your final answer always following the same format",
     "Okay now double-check that the format is right, which is like this: {“answer”: “A,B,D”}",
+    "You are almost there, just one more step, remember the format! And try to be as accurate as possible with you answers, you can do it!",
 ]
 
 
@@ -52,7 +55,7 @@ async def process_prompt(client, prompt, semaphore):
             )
             history.append({"content": prompt, "role": "user"})
             res = await client.chat.complete_async(
-                model="ft:mistral-large-latest:64a2499b:20241012:bf6d48dc",
+                model=MODEL_NAME,
                 messages=history,
                 temperature=0.0,
             )
@@ -65,7 +68,7 @@ async def process_prompt(client, prompt, semaphore):
                     history.append({"content": check_prompts[index], "role": "user"})
 
                     res = await client.chat.complete_async(
-                        model="ft:mistral-large-latest:64a2499b:20241012:bf6d48dc",
+                        model=MODEL_NAME,
                         messages=history,
                         temperature=0.0,
                     )
@@ -76,7 +79,7 @@ async def process_prompt(client, prompt, semaphore):
                 return (
                     prompt,
                     response,
-                )  # Return the last response if no valid format was found
+                )
         except Exception as e:
             return prompt, f"Error: {str(e)}"
     return prompt, None
@@ -88,7 +91,7 @@ async def main(prompts=None):
     tasks = [process_prompt(s, prompt, semaphore) for prompt in prompts]
     results = await asyncio.gather(*tasks)
 
-    for prompt, result in results:
+    for _, result in results:
         print(result)
         json_strings = re.findall(
             r"\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}", result
@@ -113,7 +116,7 @@ if __name__ == "__main__":
             row["answer_D"],
             row["answer_E"],
         )
-        for row_idx, row in df.iterrows()
+        for _, row in df.iterrows()
     ]
     asyncio.run(main(prompts=list_prompts))
 

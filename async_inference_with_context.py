@@ -9,18 +9,18 @@ import pandas as pd
 from dotenv import load_dotenv
 from mistralai import Mistral
 
-import utils.prompts as prompts
+from utils import prompts
 from utils.config import models
 
-MODEL_ID = "mistral_large_first_ft"
-MODEL_NAME = models[MODEL_ID]
 MAX_CONCURRENT_CALLS = 20
 MAX_TRY_NUMBER = 2
+MODEL_ID = "mistral_large_first_ft"
+MODEL_NAME = models[MODEL_ID]
 
 load_dotenv()
 
 api_key = os.getenv("MISTRAL_API_KEY")
-questions_file = "./data/dataset/questions.csv"
+questions_file = "./data/dataset/dataset_english_only_clean_final.csv"
 output_path = "./data/output/"
 
 df = pd.read_csv(questions_file, sep=",")
@@ -40,41 +40,22 @@ answers = []
 
 async def process_prompt(client, prompt, semaphore):
     async with semaphore:
-        history = []
         try:
-            history.append(
-                {
-                    "content": prompts.PIZZA_MODIFIER + prompts.THINK_PROMPT,
-                    "role": "system",
-                }
-            )
-            history.append({"content": prompt, "role": "user"})
             res = await client.chat.complete_async(
-                model="ft:mistral-large-latest:64a2499b:20241012:bf6d48dc",
-                messages=history,
+                model=MODEL_NAME,
+                messages=[
+                    {
+                        "content": prompts.PIZZA_MODIFIER
+                        + prompts.THINK_PROMPT_CONTEXT.format(context=df_context["tag"])
+                        + prompts.THINK_PROMPT_CONTEXT_FEW_SHOTS,
+                        "role": "system",
+                    },
+                    {"content": prompt, "role": "user"},
+                ],
                 temperature=0.0,
             )
             if res is not None:
-                response = res.choices[0].message.content
-                history.append({"content": response, "role": "assistant"})
-
-                for index in range(MAX_TRY_NUMBER):
-                    print(f"Try number: {index}")
-                    history.append({"content": check_prompts[index], "role": "user"})
-
-                    res = await client.chat.complete_async(
-                        model="ft:mistral-large-latest:64a2499b:20241012:bf6d48dc",
-                        messages=history,
-                        temperature=0.0,
-                    )
-
-                    response = res.choices[0].message.content
-                    history.append({"content": response, "role": "assistant"})
-
-                return (
-                    prompt,
-                    response,
-                )  # Return the last response if no valid format was found
+                return prompt, res.choices[0].message.content
         except Exception as e:
             return prompt, f"Error: {str(e)}"
     return prompt, None
@@ -86,8 +67,7 @@ async def main(prompts=None):
     tasks = [process_prompt(s, prompt, semaphore) for prompt in prompts]
     results = await asyncio.gather(*tasks)
 
-    for prompt, result in results:
-        print(result)
+    for _, result in results:
         json_strings = re.findall(
             r"\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}", result
         )
@@ -111,7 +91,7 @@ if __name__ == "__main__":
             row["answer_D"],
             row["answer_E"],
         )
-        for row_idx, row in df.iterrows()
+        for _, row in df.iterrows()
     ]
     asyncio.run(main(prompts=list_prompts))
 

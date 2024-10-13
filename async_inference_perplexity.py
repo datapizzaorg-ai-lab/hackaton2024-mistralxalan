@@ -5,19 +5,19 @@ import os
 import re
 
 import aiohttp
-import pandas as pd  # Assuming you have this import already
+import pandas as pd
 from dotenv import load_dotenv
 
-import prompts
+import utils.prompts as prompts
 
 load_dotenv()
 import pandas as pd
 
-questions_file = (
-    "./data/dataset/dataset_english_only_clean_final.csv"  # path to the questions file
-)
+MODEL_NAME = "llama-3.1-sonar-huge-128k-online"
 
-output_path = "./data/output/"  # path to the output file
+questions_file = "./data/dataset/dataset_english_only_clean_final.csv"
+
+output_path = "./data/output/"
 
 df = pd.read_csv(questions_file, sep=",")
 
@@ -42,7 +42,7 @@ list_prompts = [
         row["answer_D"],
         row["answer_E"],
     )
-    for row_idx, row in df.iterrows()
+    for _, row in df.iterrows()
 ]
 
 headers = {
@@ -55,7 +55,7 @@ semaphore = asyncio.Semaphore(15)
 
 async def fetch(session, prompt):
     payload = {
-        "model": "llama-3.1-sonar-huge-128k-online",
+        "model": MODEL_NAME,
         "messages": [
             {
                 "role": "system",
@@ -75,10 +75,9 @@ async def fetch(session, prompt):
         "presence_penalty": 0,
         "frequency_penalty": 1,
     }
-    async with semaphore:  # Limit to 30 concurrent requests
+    async with semaphore:
         async with session.post(url, json=payload, headers=headers) as response:
             result = await response.json()
-            # Extract the answer from the response
             message_content = result["choices"][0]["message"]["content"]
             json_string = re.findall(
                 r"\{(?:[^{}]|\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\})*\}",
